@@ -1,5 +1,5 @@
 // Copyright 2020-2020 The TZIOT Authors. All rights reserved.
-// nrf52832µÄioÇı¶¯
+// nrf52832çš„ioé©±åŠ¨
 // Authors: jdh99 <jdh821@163.com>
 
 #include "tzio.h"
@@ -8,7 +8,7 @@
 
 #define PIN_VALUE_MAX 31
 
-// ×î´óÖ§³Ö8¸öÍ¨µÀµÄÖĞ¶Ï
+// æœ€å¤§æ”¯æŒ8ä¸ªé€šé“çš„ä¸­æ–­
 #define IRQ_CALLBACK_NUM_MAX 8
 
 typedef struct {
@@ -16,14 +16,14 @@ typedef struct {
     TZEmptyFunc callback;
 } IrqCallback;
 
-// ÉÏÀ­Ä£Ê½
+// ä¸Šæ‹‰æ¨¡å¼
 typedef enum {
     GPIO_NOPULL = 0,
     GPIO_PULLDOWN = 1,
     GPIO_PULLUP = 3
 } GPIO_Pull_Mode;
 
-// ÊäÈë´¥·¢Ä£Ê½
+// è¾“å…¥è§¦å‘æ¨¡å¼
 typedef enum {
     GPIOTE_NONE = 0,
     GPIOTE_LO_TO_HI = 1,
@@ -37,7 +37,7 @@ static int gIrqCallbackNum = 0;
 static bool isPinUsed(int pin);
 static void initGpiote(void);
 
-// TZIOConfigOutput ÉèÖÃÎªÊä³ö
+// TZIOConfigOutput è®¾ç½®ä¸ºè¾“å‡º
 void TZIOConfigOutput(int pin, TZIOPullMode pullMode, TZIOOutMode outMode) {
     if (pin < 0 || pin > PIN_VALUE_MAX) {
         return;
@@ -59,7 +59,7 @@ void TZIOConfigOutput(int pin, TZIOPullMode pullMode, TZIOOutMode outMode) {
         (GPIO_PIN_CNF_SENSE_Disabled << GPIO_PIN_CNF_SENSE_Pos);
 }
 
-// TZIOConfigInput ÉèÖÃÎªÊäÈë
+// TZIOConfigInput è®¾ç½®ä¸ºè¾“å…¥
 void TZIOConfigInput(int pin, TZIOPullMode pullMode) {
     if (pin < 0 || pin > PIN_VALUE_MAX) {
         return;
@@ -79,42 +79,46 @@ void TZIOConfigInput(int pin, TZIOPullMode pullMode) {
         (GPIO_PIN_CNF_SENSE_Disabled << GPIO_PIN_CNF_SENSE_Pos);
 }
 
-// TZIOSetHigh Êä³ö¸ßµçÆ½
+// TZIOSetHigh è¾“å‡ºé«˜ç”µå¹³
 void TZIOSetHigh(int pin) {
     NRF_P0->OUTSET = 1 << pin;
 }
 
-// TZIOSetLow Êä³öµÍµçÆ½
+// TZIOSetLow è¾“å‡ºä½ç”µå¹³
 void TZIOSetLow(int pin) {
     NRF_P0->OUTCLR = 1 << pin;
 }
 
-// TZIOSet Êä³öµçÆ½
+// TZIOSet è¾“å‡ºç”µå¹³
 void TZIOSet(int pin, bool level) {
-    NRF_P0->OUT = (uint32_t)level << pin;
+    if (level) {
+        NRF_P0->OUTSET = 1 << pin;
+    } else {
+        NRF_P0->OUTCLR = 1 << pin;
+    }
 }
 
-// TZIOToggle Êä³öÌø±äĞÅºÅ
+// TZIOToggle è¾“å‡ºè·³å˜ä¿¡å·
 void TZIOToggle(int pin) {
-    //½«¼Ä´æÆ÷ÖµÈ¡³ö½øĞĞ²Ù×÷(²»ÄÜÖ±½Ó¶Ô¼Ä´æÆ÷½øĞĞ»ò/Óë/·ÇµÈÖ±½Ó²Ù×÷, NRF52832µÄ¼Ä´æÆ÷Ö»ÄÜ±»¼òµ¥¸³Öµ)
+    //å°†å¯„å­˜å™¨å€¼å–å‡ºè¿›è¡Œæ“ä½œ(ä¸èƒ½ç›´æ¥å¯¹å¯„å­˜å™¨è¿›è¡Œæˆ–/ä¸/éç­‰ç›´æ¥æ“ä½œ, NRF52832çš„å¯„å­˜å™¨åªèƒ½è¢«ç®€å•èµ‹å€¼)
     uint32_t pins_state = NRF_P0->OUT;
 
     NRF_P0->OUTSET = (~pins_state & (1UL << pin));
     NRF_P0->OUTCLR = (pins_state & (1UL << pin));
 }
 
-// TZIOReadInputPin ¶ÁÈ¡ÊäÈëÒı½ÅµçÆ½
+// TZIOReadInputPin è¯»å–è¾“å…¥å¼•è„šç”µå¹³
 bool TZIOReadInputPin(int pin) {
     return ((NRF_P0->IN >> pin) & 0x1);
 }
 
-// TZIOReadOutputPin ¶ÁÈ¡Êä³öÒı½ÅµçÆ½
+// TZIOReadOutputPin è¯»å–è¾“å‡ºå¼•è„šç”µå¹³
 bool TZIOReadOutputPin(int pin) {
     return ((NRF_P0->OUT >> pin) & 0x1);
 }
 
-// TZIOConfigIrq ÅäÖÃÖĞ¶ÏÄ£Ê½
-// ±¾º¯Êı»áÅäÖÃioÎªÊäÈë,²»ÓÃÌáÇ°ÅäÖÃ.ÇÒÅäÖÃÍê³ÉºóÒÑ¾­Ê¹ÄÜÖĞ¶Ï
+// TZIOConfigIrq é…ç½®ä¸­æ–­æ¨¡å¼
+// æœ¬å‡½æ•°ä¼šé…ç½®ioä¸ºè¾“å…¥,ä¸ç”¨æå‰é…ç½®.ä¸”é…ç½®å®Œæˆåå·²ç»ä½¿èƒ½ä¸­æ–­
 void TZIOConfigIrq(int pin, TZIOIrqPolarity polarity, TZEmptyFunc callback) {
     if (gIrqCallbackNum >= IRQ_CALLBACK_NUM_MAX) {
         return;
@@ -175,8 +179,8 @@ void GPIOTE_IRQHandler(void) {
     }
 }
 
-// TZIOIrqEnable Ê¹ÄÜÖĞ¶Ï
-// ±¾º¯ÊıĞèÒªÇı¶¯¶¨Òå
+// TZIOIrqEnable ä½¿èƒ½ä¸­æ–­
+// æœ¬å‡½æ•°éœ€è¦é©±åŠ¨å®šä¹‰
 void TZIOIrqEnable(int pin) {
     if (pin >= gIrqCallbackNum) {
         return;
@@ -184,8 +188,8 @@ void TZIOIrqEnable(int pin) {
     NRF_GPIOTE->TASKS_SET[pin] = 1;
 }
 
-// TZIOIrqDisable ½ûÖ¹ÖĞ¶Ï
-// ±¾º¯ÊıĞèÒªÇı¶¯¶¨Òå
+// TZIOIrqDisable ç¦æ­¢ä¸­æ–­
+// æœ¬å‡½æ•°éœ€è¦é©±åŠ¨å®šä¹‰
 void TZIOIrqDisable(int pin) {
     if (pin >= gIrqCallbackNum) {
         return;
