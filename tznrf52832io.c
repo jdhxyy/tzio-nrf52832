@@ -5,11 +5,15 @@
 #include "tzio.h"
 #include "nrf52.h"
 #include "nrf52_bitfields.h"
+#include "lagan.h"
 
 #define PIN_VALUE_MAX 31
 
 // 最大支持8个通道的中断
 #define IRQ_CALLBACK_NUM_MAX 8
+
+// PORT中断序号
+#define GPIOTE_IRQ_PORT 31
 
 typedef struct {
     int pin;
@@ -31,8 +35,15 @@ typedef enum {
     GPIOTE_TOGGLE = 3
 } GPIOTE_POLARITY;
 
+typedef enum {
+    GPIO_SENSE_DISABLE = 0,
+    GPIO_SENSE_HIGH = 2,
+    GPIO_SENSE_LOW = 3
+} GPIO_Sense_Mode;
+
 static IrqCallback gIrqCallback[IRQ_CALLBACK_NUM_MAX] = {0};
 static int gIrqCallbackNum = 0;
+static IrqCallback gIrqPortCallback = {0};
 
 static bool isPinUsed(int pin);
 static void initGpiote(void);
@@ -60,7 +71,7 @@ void TZIOConfigOutput(int pin, TZIOPullMode pullMode, TZIOOutMode outMode) {
 }
 
 // TZIOConfigInput 设置为输入
-void TZIOConfigInput(int pin, TZIOPullMode pullMode) {
+void TZIOConfigInput(int pin, TZIOPullMode pullMode, TZIOWakeMode wakeMode) {
     if (pin < 0 || pin > PIN_VALUE_MAX) {
         return;
     }
@@ -72,11 +83,18 @@ void TZIOConfigInput(int pin, TZIOPullMode pullMode) {
     case TZIO_PULLUP: pullModeGet = GPIO_PULLUP; break;
     }
 
+    uint32_t wakeModeGet;
+    switch(wakeMode) {
+    case TZIO_WAKE_DISABLE: wakeModeGet = GPIO_SENSE_DISABLE; break;
+    case TZIO_WAKE_HIGH: wakeModeGet = GPIO_SENSE_HIGH; break;
+    case TZIO_WAKE_LOW: wakeModeGet = GPIO_SENSE_LOW; break;
+    }
+
     NRF_P0->PIN_CNF[pin] = (GPIO_PIN_CNF_DIR_Input << GPIO_PIN_CNF_DIR_Pos) | 
         (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) | 
         (pullModeGet << GPIO_PIN_CNF_PULL_Pos) | 
         (GPIO_PIN_CNF_DRIVE_S0S1 << GPIO_PIN_CNF_DRIVE_Pos) | 
-        (GPIO_PIN_CNF_SENSE_Disabled << GPIO_PIN_CNF_SENSE_Pos);
+        (wakeModeGet << GPIO_PIN_CNF_SENSE_Pos);
 }
 
 // TZIOSetHigh 输出高电平
@@ -118,7 +136,6 @@ bool TZIOReadOutputPin(int pin) {
 }
 
 // TZIOConfigIrq 配置中断模式
-// 本函数会配置io为输入,不用提前配置.且配置完成后已经使能中断
 void TZIOConfigIrq(int pin, TZIOIrqPolarity polarity, TZEmptyFunc callback) {
     if (gIrqCallbackNum >= IRQ_CALLBACK_NUM_MAX) {
         return;
@@ -162,13 +179,22 @@ static void initGpiote(void) {
     for (int i = 0; i < 8; i++) {
         NRF_GPIOTE->EVENTS_IN[i] = 0;
     }
+    NRF_GPIOTE->EVENTS_PORT = 0;
     
     NVIC_SetPriority(GPIOTE_IRQn, TZ_IRQ_PRIORITY_MIDDLE);
     NVIC_ClearPendingIRQ(GPIOTE_IRQn);
     NVIC_EnableIRQ(GPIOTE_IRQn);
 }
 
-void GPIOTE_IRQHandler(void) {   
+void GPIOTE_IRQHandler(void) {
+    if (NRF_GPIOTE->EVENTS_PORT) {
+        NRF_GPIOTE->EVENTS_PORT = 0;
+
+        if (gIrqPortCallback.callback) {
+            gIrqPortCallback.callback();
+        }
+    }
+
     for (int i = 0; i < IRQ_CALLBACK_NUM_MAX; i++) {
         if (NRF_GPIOTE->EVENTS_IN[i]) {
             NRF_GPIOTE->EVENTS_IN[i] = 0;
@@ -195,4 +221,15 @@ void TZIOIrqDisable(int pin) {
         return;
     }
     NRF_GPIOTE->TASKS_CLR[pin] = 1;
+}
+
+// TZIOConfigIrqPort 配置PORT中断模式
+// PORT中断只允许一个引脚.调用本函数之前需要调用TZIOConfigInput初始化
+void TZIOConfigIrqPort(int pin, TZEmptyFunc callback) {
+    initGpiote();
+
+    NRF_GPIOTE->INTENSET = (uint32_t)1 << GPIOTE_IRQ_PORT;
+
+    gIrqPortCallback.pin = pin;
+    gIrqPortCallback.callback = callback;
 }
